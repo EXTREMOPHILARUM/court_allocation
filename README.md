@@ -1,7 +1,7 @@
 ---
 title: Pickleball Tournament Court Allocation
 description: A web application to automatically schedule and allocate courts for pickleball tournaments
-author: Saurabh Nanda
+author: Saurabh Nandedkar
 app_file: app.py
 sdk: gradio
 sdk_version: 4.44.1
