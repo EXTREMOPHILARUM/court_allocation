@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 7860
 
-CMD ["gradio", "app.py"]
+CMD ["python", "app.py"]
