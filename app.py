@@ -189,8 +189,9 @@ def create_teams_for_category(category, total_participants, amateur_ratio, women
     advanced_men = total_advanced - advanced_women
     
     teams = []
+    
     if category == "Men's Doubles":
-        # Create teams with advanced men only
+        # Create teams with advanced men players
         players = [Player(f"M{i+1}", "M", "Advanced") for i in range(advanced_men)]
         for i in range(0, len(players), 2):
             if i + 1 < len(players):
@@ -198,7 +199,7 @@ def create_teams_for_category(category, total_participants, amateur_ratio, women
                 teams.append(team)
     
     elif category == "Mixed Doubles":
-        # Create mixed teams with advanced players
+        # Create mixed doubles teams (one man + one woman)
         men = [Player(f"M{i+1}", "M", "Advanced") for i in range(advanced_men)]
         women = [Player(f"W{i+1}", "F", "Advanced") for i in range(advanced_women)]
         min_pairs = min(len(men), len(women))
@@ -207,8 +208,11 @@ def create_teams_for_category(category, total_participants, amateur_ratio, women
             teams.append(team)
     
     elif category == "Amateur":
-        # Create amateur teams
-        players = [Player(f"A{i+1}", "M" if i % 2 == 0 else "F", "Amateur") for i in range(total_amateur)]
+        # Create amateur teams, excluding those reserved for parent-child
+        parent_child_players = int(total_amateur * parent_child_ratio)
+        available_amateurs = total_amateur - parent_child_players
+        players = [Player(f"A{i+1}", "M" if i % 2 == 0 else "F", "Amateur") 
+                  for i in range(available_amateurs)]
         for i in range(0, len(players), 2):
             if i + 1 < len(players):
                 team = Team(len(teams) + 1, category, [players[i], players[i+1]])
@@ -224,48 +228,51 @@ def create_teams_for_category(category, total_participants, amateur_ratio, women
                 teams.append(team)
     
     elif category == "Open":
-        # Create teams with all advanced players
-        players = ([Player(f"M{i+1}", "M", "Advanced") for i in range(advanced_men)] +
-                  [Player(f"W{i+1}", "F", "Advanced") for i in range(advanced_women)])
+        # Create teams with any advanced players not used in 35+
+        non_35_ratio = 1 - plus_35_ratio
+        players = ([Player(f"M{i+1}", "M", "Advanced") for i in range(int(advanced_men * non_35_ratio))] +
+                  [Player(f"W{i+1}", "F", "Advanced") for i in range(int(advanced_women * non_35_ratio))])
         for i in range(0, len(players), 2):
             if i + 1 < len(players):
                 team = Team(len(teams) + 1, category, [players[i], players[i+1]])
                 teams.append(team)
     
     elif category == "Parent-Child":
-        # Create parent-child teams (one parent + one child)
-        children = [Player(f"Child{i+1}", "M" if i % 2 == 0 else "F", "Amateur") 
-                   for i in range(int(total_amateur * parent_child_ratio))]
-        parents = [Player(f"Parent{i+1}", "M" if i % 2 == 0 else "F", "Advanced") 
-                  for i in range(len(children))]
+        # Calculate number of parent-child pairs
+        num_pairs = int((total_amateur * parent_child_ratio) / 2)  # Divide by 2 as each team needs one parent and one child
         
-        for i in range(len(children)):
-            team = Team(len(teams) + 1, category, [parents[i], children[i]])
+        # Create parent-child teams
+        for i in range(num_pairs):
+            child = Player(f"Child{i+1}", "M" if i % 2 == 0 else "F", "Amateur")
+            parent = Player(f"Parent{i+1}", "M" if i % 2 == 0 else "F", "Advanced")
+            team = Team(len(teams) + 1, category, [parent, child])
             teams.append(team)
     
-    # Distribute teams into groups more evenly
+    # Distribute teams into groups
     if teams:
-        total_teams = len(teams)
-        min_teams_per_group = teams_per_group - 1 if teams_per_group > 3 else teams_per_group
-        num_groups = max(1, math.ceil(total_teams / teams_per_group))
-        
-        # Adjust number of groups to ensure minimum teams per group
-        while num_groups > 1 and total_teams / num_groups < min_teams_per_group:
-            num_groups -= 1
-        
-        # Calculate base size and number of larger groups
-        base_size = total_teams // num_groups
-        extra_teams = total_teams % num_groups
-        
-        # Distribute teams across groups
-        current_team = 0
-        for group in range(1, num_groups + 1):
-            group_size = base_size + (1 if group <= extra_teams else 0)
-            for _ in range(group_size):
-                if current_team < len(teams):
-                    teams[current_team].group_id = group
-                    teams[current_team].group_number = _ + 1
-                    current_team += 1
+        num_teams = len(teams)
+        if num_teams < teams_per_group:
+            # If we have fewer teams than the minimum group size, put them all in one group
+            for team in teams:
+                team.group_id = 1
+        else:
+            # Calculate number of groups needed
+            num_groups = max(1, (num_teams + teams_per_group - 1) // teams_per_group)
+            teams_per_actual_group = num_teams // num_groups
+            remainder = num_teams % num_groups
+            
+            current_group = 1
+            teams_in_current_group = 0
+            target_teams_in_group = teams_per_actual_group + (1 if current_group <= remainder else 0)
+            
+            for team in teams:
+                if teams_in_current_group >= target_teams_in_group:
+                    current_group += 1
+                    teams_in_current_group = 0
+                    target_teams_in_group = teams_per_actual_group + (1 if current_group <= remainder else 0)
+                
+                team.group_id = current_group
+                teams_in_current_group += 1
     
     return teams
 
