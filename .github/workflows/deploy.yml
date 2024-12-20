@@ -29,19 +29,28 @@ jobs:
           script: |
             cd /opt/court-allocation
             
-            # Build the new image
-            docker build -t court-allocation:latest .
+            # Pull latest changes and rebuild
+            docker-compose pull || true
+            docker-compose build --no-cache
             
-            # Stop and remove the existing container if it exists
-            docker stop court-allocation || true
-            docker rm court-allocation || true
+            # Bring down existing containers
+            docker-compose down
             
-            # Run the new container
-            docker run -d \
-              --name court-allocation \
-              --restart unless-stopped \
-              -p 80:7860 \
-              court-allocation:latest
+            # Start new containers
+            docker-compose up -d
             
-            # Clean up old images
+            # Clean up
             docker image prune -f
+            
+            # Wait for the application to start
+            echo "Waiting for application to start..."
+            sleep 10
+            
+            # Health check
+            response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:80)
+            if [ $response -eq 200 ]; then
+              echo "Health check passed: Application is running"
+            else
+              echo "Health check failed: Application is not responding (Status code: $response)"
+              exit 1
+            fi

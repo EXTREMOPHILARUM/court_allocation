@@ -1,0 +1,52 @@
+version: '3.8'
+
+networks:
+  web:
+    external: false
+
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=web"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.saurabhn.com`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.saurabhn.com`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: court-allocation
+    restart: unless-stopped
+    networks:
+      - web
+    expose:
+      - "7860"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.courts.entrypoints=web"
+      - "traefik.http.routers.courts.rule=Host(`courts.saurabhn.com`)"
+      - "traefik.http.routers.courts.service=courts"
+      - "traefik.http.services.courts.loadbalancer.server.port=7860"
+      - "traefik.http.middlewares.courts-strip.stripprefix.prefixes=/"
+      - "traefik.http.routers.courts.middlewares=courts-strip"

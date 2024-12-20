@@ -53,42 +53,97 @@ python app.py
 
 ## Deployment
 
-This application can be deployed using Docker. The repository includes GitHub Actions for automatic deployment.
+This application is deployed using Docker Compose with Traefik as a reverse proxy, operating behind Cloudflare for SSL/TLS termination.
 
 ### Prerequisites
 
-1. Server with Docker installed
-2. GitHub repository secrets configured:
+1. Server with Docker and Docker Compose installed
+2. Domain name pointed to your server through Cloudflare
+3. GitHub repository secrets configured:
    - `SERVER_HOST`: Deployment server hostname/IP
-   - `SERVER_USERNAME`: Server SSH username (needs sudo privileges for port 80)
+   - `SERVER_USERNAME`: Server SSH username
    - `SERVER_SSH_KEY`: Server SSH private key
 
-### Manual Deployment
+### Initial Setup
 
-To deploy manually:
+1. Ensure your domains are properly configured in Cloudflare:
+   - `courts.saurabhn.com`
+   - `traefik.saurabhn.com`
+2. Enable Cloudflare proxy (orange cloud) for both domains
+
+### Local Development
+
+For local development and testing:
+
+1. Add the following entries to your `/etc/hosts` file:
+```
+127.0.0.1    courts.localhost
+127.0.0.1    traefik.localhost
+```
+
+2. Start the application in development mode:
+```bash
+# Start with Docker Compose Watch
+docker compose -f docker-compose.local.yml watch
+
+# Or start normally without watch mode
+docker compose -f docker-compose.local.yml up -d
+```
+
+The application will be available at:
+- Main application: `http://courts.localhost`
+- Traefik dashboard: `http://traefik.localhost`
+
+Development Features:
+- Hot reload: Changes to Python files are synced immediately
+- Auto rebuild: Changes to `requirements.txt` or `Dockerfile` trigger rebuilds
+- Ignored files: Git, cache, and environment files are excluded from syncing
+- Container logs are preserved for debugging
+
+### Manual Deployment
 
 ```bash
 # Clone the repository
 git clone <repository-url> /opt/court-allocation
 cd /opt/court-allocation
 
-# Build the Docker image
-docker build -t court-allocation .
+# Start the application
+docker-compose up -d
 
-# Run the container (requires sudo for port 80)
-sudo docker run -d \
-  --name court-allocation \
-  --restart unless-stopped \
-  -p 80:7860 \
-  court-allocation
+# View logs
+docker-compose logs -f
+
+# Stop the application
+docker-compose down
 ```
 
-The application will be available at `http://your-server`
+The application will be available at:
+- Main application: `http://courts.saurabhn.com` (HTTPS provided by Cloudflare)
+- Traefik dashboard: `http://traefik.saurabhn.com` (HTTPS provided by Cloudflare)
 
-### Note on Port 80
+### Features
 
-Since we're using port 80, which is a privileged port (requires root access):
-1. Ensure your deployment user has sudo privileges
-2. Alternatively, you can:
-   - Use a reverse proxy like Nginx (recommended for production)
-   - Or use a higher port number (e.g., 8080) and configure your firewall rules
+- **Traefik Reverse Proxy**:
+  - Domain-based routing
+  - Docker integration
+  - Load balancing
+  - Health checks
+
+- **Cloudflare Integration**:
+  - SSL/TLS termination
+  - DDoS protection
+  - Caching
+  - Analytics
+
+- **Container Management**:
+  - Automatic container restart
+  - Health monitoring
+  - Log rotation (max 3 files of 10MB each)
+  - Easy deployment commands
+
+### Security Notes
+
+1. SSL/TLS is handled by Cloudflare
+2. Internal communication uses HTTP
+3. Container security options are enabled
+4. Network isolation between containers

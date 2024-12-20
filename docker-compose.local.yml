@@ -1,0 +1,69 @@
+version: '3.8'
+
+networks:
+  web-local:
+    external: false
+
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik-local
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=web-local"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - web-local
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: court-allocation-local
+    restart: unless-stopped
+    networks:
+      - web-local
+    expose:
+      - "7860"
+    labels:
+      - "traefik.enable=true"
+      # Router configuration
+      - "traefik.http.routers.courts.entrypoints=web"
+      - "traefik.http.routers.courts.rule=Host(`courts.localhost`)"
+      - "traefik.http.routers.courts.service=courts"
+      # Service configuration
+      - "traefik.http.services.courts.loadbalancer.server.port=7860"
+      # Middleware for path handling
+      - "traefik.http.middlewares.courts-strip.stripprefix.prefixes=/"
+      - "traefik.http.routers.courts.middlewares=courts-strip"
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+          ignore:
+            - .git/
+            - .env
+            - __pycache__/
+            - "*.pyc"
+        - action: rebuild
+          path: requirements.txt
+        - action: rebuild
+          path: Dockerfile
