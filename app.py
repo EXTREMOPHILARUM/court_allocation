@@ -698,7 +698,7 @@ def create_interface():
                 match_duration = gr.Slider(label="Match Duration (minutes)", minimum=15, value=15, step=5)
                 qualifying_teams = gr.Slider(label="Qualifying Teams", minimum=1, value=2, step=1)
                 start_time = gr.Text(label="Start Time (HH:MM)", value="09:00")
-                end_time = gr.Text(label="End Time (HH:MM)", value="17:00")
+                end_time = gr.Text(label="End Time (HH:MM)", value="18:00")
                 courts_available = gr.Slider(label="Courts Available", minimum=1, value=4, step=1)
                 keep_categories_separate = gr.Checkbox(label="Keep Categories Separate", value=True)
         
