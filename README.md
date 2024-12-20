@@ -1,12 +1,21 @@
 ---
-title: court_allocation
+title: Pickleball Tournament Court Allocation
+description: A web application to automatically schedule and allocate courts for pickleball tournaments
+author: Saurabh Nanda
 app_file: app.py
 sdk: gradio
 sdk_version: 4.44.1
+python_version: "3.9"
+tags:
+  - pickleball
+  - tournament
+  - scheduling
+  - gradio
 ---
-# Pickleball Tournament Court Allocation Calculator
 
-This application helps tournament organizers calculate the number of courts needed for a pickleball tournament based on various parameters including participant numbers, categories, and match formats.
+# Pickleball Tournament Court Allocation
+
+A smart court allocation system that helps tournament organizers efficiently schedule matches across multiple courts, considering various categories and time slots.
 
 ## Features
 
@@ -67,8 +76,8 @@ This application is deployed using Docker Compose with Traefik as a reverse prox
 ### Initial Setup
 
 1. Ensure your domains are properly configured in Cloudflare:
-   - `courts.saurabhn.com`
-   - `traefik.saurabhn.com`
+   - `your-app-domain.com`
+   - `your-traefik-domain.com`
 2. Enable Cloudflare proxy (orange cloud) for both domains
 
 ### Local Development
@@ -118,8 +127,8 @@ docker-compose down
 ```
 
 The application will be available at:
-- Main application: `http://courts.saurabhn.com` (HTTPS provided by Cloudflare)
-- Traefik dashboard: `http://traefik.saurabhn.com` (HTTPS provided by Cloudflare)
+- Main application: `http://your-app-domain.com` (HTTPS provided by Cloudflare)
+- Traefik dashboard: `http://your-traefik-domain.com` (HTTPS provided by Cloudflare)
 
 ### Features
 
