@@ -92,90 +92,77 @@ def schedule_matches(matches, start_time, end_time, match_duration, courts_avail
     # Initialize court availability tracking
     court_slots = {court: {slot: None for slot in time_slots} for court in range(1, courts_available + 1)}
     
-    # Get unique categories and sort by priority
+    # Get unique categories and sort by priority (lower number = higher priority)
     categories = sorted(set(match.category for match in matches))
     if category_priority:
         priority_map = {cat: priority for cat, priority in category_priority.items()}
-        categories.sort(key=lambda x: priority_map.get(x, 999))
+        categories.sort(key=lambda x: priority_map.get(x, 999))  # Lower numbers first
     
     if keep_categories_separate:
-        # Allocate courts to categories based on number of matches
-        category_matches = {cat: [m for m in matches if m.category == cat] for cat in categories}
-        
-        # Calculate minimum courts needed per category
-        min_courts_needed = {cat: max(1, math.ceil(len(matches) / len(time_slots))) 
-                           for cat, matches in category_matches.items()}
-        
-        # First pass: Schedule matches by priority
-        for time_slot in time_slots:
+        current_slot_idx = 0
+        while unscheduled_matches and current_slot_idx < len(time_slots):
+            time_slot = time_slots[current_slot_idx]
             available_courts = list(range(1, courts_available + 1))
+            matches_scheduled_this_slot = False
             
-            # Try to schedule one match from each category in priority order
+            # Try to schedule matches from each category in this time slot
             for category in categories:
                 if not available_courts:
                     break
                     
-                category_matches = [m for m in unscheduled_matches if m.category == category]
-                if not category_matches:
-                    continue
-                
-                # Sort matches by group and round
-                category_matches.sort(key=lambda x: (x.group_id, x.round_num))
-                match = category_matches[0]
-                
-                # Find first available court
-                for court in available_courts:
-                    if court_slots[court][time_slot] is None:
-                        match.start_time = time_slot
-                        match.court = court
-                        court_slots[court][time_slot] = match
-                        scheduled_matches.append(match)
-                        unscheduled_matches.remove(match)
-                        available_courts.remove(court)
-                        break
-            
-            # Second pass: Fill empty courts with any remaining matches
-            if available_courts:
-                remaining_matches = sorted(
-                    [m for m in unscheduled_matches],
-                    key=lambda x: (priority_map.get(x.category, 999), x.group_id, x.round_num)
+                # Get matches for this category, sorted by group and round
+                category_matches = sorted(
+                    [m for m in unscheduled_matches if m.category == category],
+                    key=lambda x: (x.group_id, x.round_num)
                 )
                 
-                for match in remaining_matches:
+                # Try to schedule each match in this category
+                for match in category_matches[:]:  # Create a copy to avoid modification during iteration
                     if not available_courts:
                         break
-                        
+                    
                     court = available_courts[0]
-                    if court_slots[court][time_slot] is None:
-                        match.start_time = time_slot
-                        match.court = court
-                        court_slots[court][time_slot] = match
-                        scheduled_matches.append(match)
-                        unscheduled_matches.remove(match)
-                        available_courts.remove(court)
-    else:
-        # Schedule all matches using all courts, maximizing utilization
-        for time_slot in time_slots:
-            available_courts = list(range(1, courts_available + 1))
+                    match.start_time = time_slot
+                    match.court = court
+                    court_slots[court][time_slot] = match
+                    scheduled_matches.append(match)
+                    unscheduled_matches.remove(match)
+                    available_courts.pop(0)
+                    matches_scheduled_this_slot = True
             
-            # Sort remaining matches by priority for this time slot
-            remaining_matches = sorted(
-                [m for m in unscheduled_matches],
+            # Move to next time slot if we scheduled something or no courts were available
+            if matches_scheduled_this_slot or not available_courts:
+                current_slot_idx += 1
+    else:
+        current_slot_idx = 0
+        while unscheduled_matches and current_slot_idx < len(time_slots):
+            time_slot = time_slots[current_slot_idx]
+            available_courts = list(range(1, courts_available + 1))
+            matches_scheduled_this_slot = False
+            
+            # Get all matches sorted by priority (lower = higher priority), group, and round
+            sorted_matches = sorted(
+                unscheduled_matches,
                 key=lambda x: (priority_map.get(x.category, 999), x.group_id, x.round_num)
             )
             
-            # Schedule as many matches as possible in this time slot
-            for match in remaining_matches:
+            # Schedule as many matches as possible in current time slot
+            for match in sorted_matches[:]:  # Create a copy to avoid modification during iteration
                 if not available_courts:
                     break
-                    
+                
                 court = available_courts[0]
                 match.start_time = time_slot
                 match.court = court
                 court_slots[court][time_slot] = match
                 scheduled_matches.append(match)
                 unscheduled_matches.remove(match)
-                available_courts.remove(court)
+                available_courts.pop(0)
+                matches_scheduled_this_slot = True
+            
+            # Move to next time slot if we scheduled something or no courts were available
+            if matches_scheduled_this_slot or not available_courts:
+                current_slot_idx += 1
     
     # Sort matches by start time and court number
     scheduled_matches.sort(key=lambda x: (x.start_time, x.court))
@@ -193,7 +180,7 @@ def schedule_matches(matches, start_time, end_time, match_duration, courts_avail
     
     return scheduled_matches
 
-def create_teams_for_category(category, total_participants, amateur_ratio, women_advanced_ratio, teams_per_group):
+def create_teams_for_category(category, total_participants, amateur_ratio, women_advanced_ratio, plus_35_ratio, parent_child_ratio, teams_per_group):
     """Create teams for a specific category"""
     # Calculate player distributions
     total_amateur = int(total_participants * amateur_ratio)
@@ -229,8 +216,8 @@ def create_teams_for_category(category, total_participants, amateur_ratio, women
     
     elif category == "35+":
         # Use a subset of advanced players for 35+
-        players = ([Player(f"M{i+1}", "M", "Advanced") for i in range(int(advanced_men * 0.3))] +
-                  [Player(f"W{i+1}", "F", "Advanced") for i in range(int(advanced_women * 0.3))])
+        players = ([Player(f"M{i+1}", "M", "Advanced") for i in range(int(advanced_men * plus_35_ratio))] +
+                  [Player(f"W{i+1}", "F", "Advanced") for i in range(int(advanced_women * plus_35_ratio))])
         for i in range(0, len(players), 2):
             if i + 1 < len(players):
                 team = Team(len(teams) + 1, category, [players[i], players[i+1]])
@@ -248,7 +235,7 @@ def create_teams_for_category(category, total_participants, amateur_ratio, women
     elif category == "Parent-Child":
         # Create parent-child teams (one parent + one child)
         children = [Player(f"Child{i+1}", "M" if i % 2 == 0 else "F", "Amateur") 
-                   for i in range(int(total_amateur * 0.3))]
+                   for i in range(int(total_amateur * parent_child_ratio))]
         parents = [Player(f"Parent{i+1}", "M" if i % 2 == 0 else "F", "Advanced") 
                   for i in range(len(children))]
         
@@ -282,7 +269,7 @@ def create_teams_for_category(category, total_participants, amateur_ratio, women
     
     return teams
 
-def calculate_groups_and_matches(total_participants, amateur_ratio, women_advanced_ratio, enabled_categories, teams_per_group_settings, qualifying_teams):
+def calculate_groups_and_matches(total_participants, amateur_ratio, women_advanced_ratio, plus_35_ratio, parent_child_ratio, enabled_categories, teams_per_group_settings, qualifying_teams):
     """Calculate groups and generate matches for enabled categories"""
     all_teams = {}
     all_matches = []
@@ -291,7 +278,9 @@ def calculate_groups_and_matches(total_participants, amateur_ratio, women_advanc
             'Total': total_participants,
             'Amateur': int(total_participants * amateur_ratio),
             'Advanced Men': int((total_participants - int(total_participants * amateur_ratio)) * (1 - women_advanced_ratio)),
-            'Advanced Women': int((total_participants - int(total_participants * amateur_ratio)) * women_advanced_ratio)
+            'Advanced Women': int((total_participants - int(total_participants * amateur_ratio)) * women_advanced_ratio),
+            '35+ Players': int((total_participants - int(total_participants * amateur_ratio)) * plus_35_ratio),
+            'Parent-Child Teams': int(total_participants * amateur_ratio * parent_child_ratio / 2)
         },
         'Total Matches': 0,
         'Men\'s Doubles Groups': 0,
@@ -303,7 +292,7 @@ def calculate_groups_and_matches(total_participants, amateur_ratio, women_advanc
     }
     
     for category in enabled_categories:
-        teams = create_teams_for_category(category, total_participants, amateur_ratio, women_advanced_ratio, teams_per_group_settings[category])
+        teams = create_teams_for_category(category, total_participants, amateur_ratio, women_advanced_ratio, plus_35_ratio, parent_child_ratio, teams_per_group_settings[category])
         if teams:
             all_teams[category] = teams
             
@@ -367,6 +356,8 @@ def create_schedule_display(scheduled_matches, all_teams, group_info, enabled_ca
 <li>👥 Amateur Players: <b>{amateur}</b></li>
 <li>👨 Advanced Men: <b>{adv_men}</b></li>
 <li>👩 Advanced Women: <b>{adv_women}</b></li>
+<li>🎯 35+ Players: <b>{plus_35}</b></li>
+<li>👨‍👦 Parent-Child Teams: <b>{parent_child}</b></li>
 </ul>
 </div>
 <div>
@@ -376,7 +367,9 @@ def create_schedule_display(scheduled_matches, all_teams, group_info, enabled_ca
         total=group_info['Player Distribution']['Total'],
         amateur=group_info['Player Distribution']['Amateur'],
         adv_men=group_info['Player Distribution']['Advanced Men'],
-        adv_women=group_info['Player Distribution']['Advanced Women']
+        adv_women=group_info['Player Distribution']['Advanced Women'],
+        plus_35=group_info['Player Distribution']['35+ Players'],
+        parent_child=group_info['Player Distribution']['Parent-Child Teams']
     )
     
     # Add group distribution for each category
@@ -485,6 +478,8 @@ def create_tournament_schedule(
     total_participants,
     amateur_ratio,
     women_advanced_ratio,
+    plus_35_ratio,
+    parent_child_ratio,
     include_mens_doubles,
     include_mixed_doubles,
     include_amateur,
@@ -554,7 +549,7 @@ def create_tournament_schedule(
         "Parent-Child": parent_child_teams
     }
     all_matches, all_teams, group_info = calculate_groups_and_matches(
-        total_participants, amateur_ratio, women_advanced_ratio,
+        total_participants, amateur_ratio, women_advanced_ratio, plus_35_ratio, parent_child_ratio,
         enabled_categories, teams_per_group_settings, qualifying_teams
     )
     
@@ -649,9 +644,15 @@ def create_interface():
         with gr.Row():
             with gr.Column():
                 # Player Distribution
-                total_participants = gr.Number(label="Total Participants", value=120, minimum=4, maximum=200)
-                amateur_ratio = gr.Slider(label="Amateur Ratio", minimum=0, maximum=1, value=0.33, step=0.01)
-                women_advanced_ratio = gr.Slider(label="Women Advanced Ratio", minimum=0, maximum=1, value=0.33, step=0.01)
+                gr.Markdown("### Player Distribution")
+                total_participants = gr.Number(label="Total Participants", value=120, minimum=4)
+                
+                # Player Ratios
+                gr.Markdown("#### Player Ratios")
+                amateur_ratio = gr.Slider(label="Amateur Players Ratio", minimum=0, value=0.33, step=0.01)
+                women_advanced_ratio = gr.Slider(label="Advanced Women Ratio (of Advanced Players)", minimum=0, value=0.33, step=0.01)
+                plus_35_ratio = gr.Slider(label="35+ Players Ratio (of Advanced Players)", minimum=0, value=0.3, step=0.01)
+                parent_child_ratio = gr.Slider(label="Parent-Child Teams Ratio (of Amateur Players)", minimum=0, value=0.3, step=0.01)
                 
                 # Category Selection, Priorities, and Group Settings
                 gr.Markdown("### Categories and Group Settings")
@@ -659,46 +660,46 @@ def create_interface():
                 with gr.Row():
                     with gr.Column():
                         include_mens_doubles = gr.Checkbox(label="Men's Doubles", value=True)
-                        mens_doubles_priority = gr.Number(label="Priority", value=1, minimum=1, maximum=7)
-                        mens_doubles_teams = gr.Slider(label="Teams per Group", minimum=3, maximum=6, value=4, step=1)
+                        mens_doubles_priority = gr.Number(label="Priority", value=1, minimum=1)
+                        mens_doubles_teams = gr.Slider(label="Teams per Group", minimum=3, value=4, step=1)
                 
                 with gr.Row():
                     with gr.Column():
                         include_mixed_doubles = gr.Checkbox(label="Mixed Doubles", value=True)
-                        mixed_doubles_priority = gr.Number(label="Priority", value=2, minimum=1, maximum=7)
-                        mixed_doubles_teams = gr.Slider(label="Teams per Group", minimum=3, maximum=6, value=4, step=1)
+                        mixed_doubles_priority = gr.Number(label="Priority", value=2, minimum=1)
+                        mixed_doubles_teams = gr.Slider(label="Teams per Group", minimum=3, value=4, step=1)
                 
                 with gr.Row():
                     with gr.Column():
                         include_amateur = gr.Checkbox(label="Amateur", value=True)
-                        amateur_priority = gr.Number(label="Priority", value=3, minimum=1, maximum=7)
-                        amateur_teams = gr.Slider(label="Teams per Group", minimum=3, maximum=6, value=4, step=1)
+                        amateur_priority = gr.Number(label="Priority", value=3, minimum=1)
+                        amateur_teams = gr.Slider(label="Teams per Group", minimum=3, value=4, step=1)
                 
                 with gr.Row():
                     with gr.Column():
                         include_35plus = gr.Checkbox(label="35+", value=True)
-                        plus_35_priority = gr.Number(label="Priority", value=4, minimum=1, maximum=7)
-                        plus_35_teams = gr.Slider(label="Teams per Group", minimum=3, maximum=6, value=4, step=1)
+                        plus_35_priority = gr.Number(label="Priority", value=4, minimum=1)
+                        plus_35_teams = gr.Slider(label="Teams per Group", minimum=3, value=4, step=1)
                 
                 with gr.Row():
                     with gr.Column():
                         include_open = gr.Checkbox(label="Open", value=True)
-                        open_priority = gr.Number(label="Priority", value=5, minimum=1, maximum=7)
-                        open_teams = gr.Slider(label="Teams per Group", minimum=3, maximum=6, value=4, step=1)
+                        open_priority = gr.Number(label="Priority", value=5, minimum=1)
+                        open_teams = gr.Slider(label="Teams per Group", minimum=3, value=4, step=1)
                 
                 with gr.Row():
                     with gr.Column():
                         include_parent_child = gr.Checkbox(label="Parent-Child", value=True)
-                        parent_child_priority = gr.Number(label="Priority", value=6, minimum=1, maximum=7)
-                        parent_child_teams = gr.Slider(label="Teams per Group", minimum=3, maximum=6, value=4, step=1)
+                        parent_child_priority = gr.Number(label="Priority", value=6, minimum=1)
+                        parent_child_teams = gr.Slider(label="Teams per Group", minimum=3, value=4, step=1)
                 
                 # Schedule Settings
                 gr.Markdown("### Schedule Settings")
-                match_duration = gr.Slider(label="Match Duration (minutes)", minimum=15, maximum=60, value=15, step=5)
-                qualifying_teams = gr.Slider(label="Qualifying Teams", minimum=1, maximum=4, value=2, step=1)
+                match_duration = gr.Slider(label="Match Duration (minutes)", minimum=15, value=15, step=5)
+                qualifying_teams = gr.Slider(label="Qualifying Teams", minimum=1, value=2, step=1)
                 start_time = gr.Text(label="Start Time (HH:MM)", value="09:00")
                 end_time = gr.Text(label="End Time (HH:MM)", value="17:00")
-                courts_available = gr.Slider(label="Courts Available", minimum=1, maximum=8, value=4, step=1)
+                courts_available = gr.Slider(label="Courts Available", minimum=1, value=4, step=1)
                 keep_categories_separate = gr.Checkbox(label="Keep Categories Separate", value=True)
         
         # Output Display
@@ -711,6 +712,8 @@ def create_interface():
                 total_participants,
                 amateur_ratio,
                 women_advanced_ratio,
+                plus_35_ratio,
+                parent_child_ratio,
                 include_mens_doubles,
                 include_mixed_doubles,
                 include_amateur,
