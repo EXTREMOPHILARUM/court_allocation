@@ -44,13 +44,15 @@ jobs:
             
             # Wait for the application to start
             echo "Waiting for application to start..."
-            sleep 10
+            sleep 15
             
-            # Health check
-            response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:80)
+            # Health check using Host header
+            response=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: courts.saurabhn.com" http://localhost)
             if [ $response -eq 200 ]; then
-              echo "Health check passed: Application is running"
+              echo "Application is healthy"
+              exit 0
             else
-              echo "Health check failed: Application is not responding (Status code: $response)"
+              echo "Health check failed with status: $response"
+              docker-compose logs
               exit 1
             fi
