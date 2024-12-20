@@ -25,18 +25,42 @@ class Team:
         return f"Team {self.group_number}"
 
 class Match:
-    def __init__(self, team1, team2, group_id, round_num):
+    def __init__(self, team1, team2, group_id, round_num, category):
         self.team1 = team1
         self.team2 = team2
         self.group_id = group_id
         self.round_num = round_num
         self.court = None
         self.start_time = None
-        self.category = team1.category if team1 else team2.category
+        self.category = category
     
     def __str__(self):
         time_str = self.start_time.strftime("%H:%M") if self.start_time else "TBD"
         return f"[{time_str}] Court {self.court}: {self.category} Group {self.group_id} - {self.team1} vs {self.team2}"
+
+def generate_matches_for_group(teams, category, group_id, qualifying_teams):
+    """Generate round-robin matches for a group of teams"""
+    matches = []
+    teams_in_group = [team for team in teams if team.group_id == group_id]
+    
+    if len(teams_in_group) < 2:
+        return matches
+    
+    # Generate round-robin matches
+    for i in range(len(teams_in_group)):
+        for j in range(i + 1, len(teams_in_group)):
+            team1 = teams_in_group[i]
+            team2 = teams_in_group[j]
+            match = Match(
+                category=category,
+                team1=team1,
+                team2=team2,
+                group_id=group_id,
+                round_num=len(matches) + 1
+            )
+            matches.append(match)
+    
+    return matches
 
 def generate_round_robin_matches(teams, group_id):
     """Generate round-robin matches for a group of teams"""
@@ -59,7 +83,7 @@ def generate_round_robin_matches(teams, group_id):
             
             # Skip matches with dummy team (byes)
             if team1 is not None and team2 is not None:
-                match = Match(team1, team2, group_id, round_num + 1)
+                match = Match(team1, team2, group_id, round_num + 1, team1.category)
                 round_matches.append(match)
         
         # Rotate teams for next round: fix team[0], rotate others clockwise
@@ -143,7 +167,7 @@ def schedule_matches(matches, start_time, end_time, match_duration, courts_avail
             # Get all matches sorted by priority (lower = higher priority), group, and round
             sorted_matches = sorted(
                 unscheduled_matches,
-                key=lambda x: (priority_map.get(x.category, 999), x.group_id, x.round_num)
+                key=lambda x: (category_priority.get(x.category, 999), x.group_id, x.round_num)
             )
             
             # Schedule as many matches as possible in current time slot
@@ -320,10 +344,7 @@ def calculate_groups_and_matches(total_participants, amateur_ratio, women_advanc
             
             # Generate matches for each group
             for group_id in range(1, num_groups + 1):
-                group_teams = [team for team in teams if team.group_id == group_id]
-                group_matches = generate_round_robin_matches(group_teams, group_id)
-                for match in group_matches:
-                    match.category = category
+                group_matches = generate_matches_for_group(teams, category, group_id, qualifying_teams)
                 all_matches.extend(group_matches)
     
     group_info['Total Matches'] = len(all_matches)
@@ -381,20 +402,13 @@ def create_schedule_display(scheduled_matches, all_teams, group_info, enabled_ca
     
     # Add group distribution for each category
     for category in enabled_categories:
-        emoji = {
-            "Men's Doubles": "👨‍👨‍👦",
-            "Mixed Doubles": "👫",
-            "Amateur": "🎾",
-            "35+": "🏆",
-            "Open": "🌟",
-            "Parent-Child": "👪"
-        }.get(category, "🏸")
-        
-        teams_in_category = [team for team in all_teams.get(category, []) if team.group_id == 1]
-        teams_per_group = len(teams_in_category) if teams_in_category else 0
-        num_groups = group_info.get(f'{category} Groups', 0)
-        
-        summary += f"<li>{emoji} {category}: <b>{num_groups}</b> groups with <b>{teams_per_group}</b> teams each</li>\n"
+        if category in all_teams:
+            num_groups = len(set(team.group_id for team in all_teams[category]))
+            teams_per_group = {i: len([t for t in all_teams[category] if t.group_id == i]) 
+                             for i in range(1, num_groups + 1)}
+            summary += f"<li>🎯 {category}: <b>{num_groups}</b> groups ("
+            summary += ", ".join(f"G{g}: {n} teams" for g, n in teams_per_group.items())
+            summary += ")</li>\n"
     
     summary += """
 </ul>
@@ -403,82 +417,44 @@ def create_schedule_display(scheduled_matches, all_teams, group_info, enabled_ca
 </div>
 """
     
-    # Create match schedule
-    schedule = """
-<div style='border:1px solid var(--border-color-primary); padding:15px; border-radius:8px; margin-bottom:20px; background-color:var(--background-fill-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1)'>
-<h2 style='color:var(--body-text-color); margin-top:0'>📅 Match Schedule</h2>
-"""
+    # Create schedule table
+    schedule = "<div style='margin-top:20px'><h2 style='color:var(--body-text-color)'>📅 Match Schedule</h2>"
+    schedule += "<div style='overflow-x:auto'><table style='width:100%; border-collapse:collapse; margin-top:10px'>"
+    schedule += "<tr style='background-color:var(--background-fill-primary)'>"
+    schedule += "<th style='padding:10px; border:1px solid var(--border-color-primary); color:var(--body-text-color)'>Time</th>"
+    schedule += "<th style='padding:10px; border:1px solid var(--border-color-primary); color:var(--body-text-color)'>Court</th>"
+    schedule += "<th style='padding:10px; border:1px solid var(--border-color-primary); color:var(--body-text-color)'>Category</th>"
+    schedule += "<th style='padding:10px; border:1px solid var(--border-color-primary); color:var(--body-text-color)'>Group</th>"
+    schedule += "<th style='padding:10px; border:1px solid var(--border-color-primary); color:var(--body-text-color)'>Match</th>"
+    schedule += "</tr>"
     
-    if not scheduled_matches:
-        schedule += "<p style='color:var(--body-text-color)'>No matches scheduled for the selected categories.</p></div>"
-        return summary + schedule
+    # Sort matches by time and court
+    scheduled_matches.sort(key=lambda x: (x.start_time, x.court))
     
-    # Group matches by time
-    matches_by_time = {}
-    for match in scheduled_matches:
-        time_key = match.start_time.strftime("%H:%M")
-        if time_key not in matches_by_time:
-            matches_by_time[time_key] = []
-        matches_by_time[time_key].append(match)
-    
-    # Create table header
-    schedule += """
-<div style='overflow-x:auto;'>
-<table style='width:100%; border-collapse:collapse; margin-top:10px; color:var(--body-text-color);'>
-<thead>
-<tr style='border-bottom:2px solid var(--border-color-primary);'>
-<th style='padding:10px; text-align:left;'>Time</th>
-<th style='padding:10px; text-align:center;'>Court</th>
-<th style='padding:10px; text-align:left;'>Category</th>
-<th style='padding:10px; text-align:center;'>Group</th>
-<th style='padding:10px; text-align:center;'>Round</th>
-<th style='padding:10px; text-align:center;'>Match</th>
-</tr>
-</thead>
-<tbody>
-"""
-    
-    # Add matches to table
     current_time = None
-    for time_key in sorted(matches_by_time.keys()):
-        for match in sorted(matches_by_time[time_key], key=lambda x: x.court):
-            category_emoji = {
-                "Men's Doubles": "👨‍👨‍👦",
-                "Mixed Doubles": "👫",
-                "Amateur": "🎾",
-                "35+": "🏆",
-                "Open": "🌟",
-                "Parent-Child": "👪"
-            }.get(match.category, "🏸")
-            
-            # Add time separator if time changes
-            if current_time != time_key:
-                schedule += f"""
-<tr style='border-top:1px solid var(--border-color-primary); background-color:var(--background-fill-secondary);'>
-<td colspan='6' style='padding:5px 10px; font-weight:bold;'>⏰ {time_key}</td>
-</tr>
-"""
-                current_time = time_key
-            
-            schedule += f"""
-<tr style='border-bottom:1px solid var(--border-color-primary);'>
-<td style='padding:10px;'>{time_key}</td>
-<td style='padding:10px; text-align:center;'>{match.court}</td>
-<td style='padding:10px;'>{category_emoji} {match.category}</td>
-<td style='padding:10px; text-align:center;'>{match.group_id}</td>
-<td style='padding:10px; text-align:center;'>{match.round_num}</td>
-<td style='padding:10px; text-align:center;'>Team {match.team1.group_number} vs Team {match.team2.group_number}</td>
-</tr>
-"""
+    for match in scheduled_matches:
+        time_str = match.start_time.strftime("%H:%M")
+        
+        # Add time separator
+        if current_time != time_str:
+            schedule += f"<tr style='background-color:var(--background-fill-secondary)'>"
+            schedule += f"<td colspan='5' style='padding:5px; text-align:center; border:1px solid var(--border-color-primary); color:var(--body-text-color)'><b>{time_str}</b></td></tr>"
+            current_time = time_str
+        
+        # Format team names
+        team1_name = f"Team {match.team1.id}" if match.team1 else "TBD"
+        team2_name = f"Team {match.team2.id}" if match.team2 else "TBD"
+        
+        schedule += "<tr>"
+        schedule += f"<td style='padding:10px; border:1px solid var(--border-color-primary); color:var(--body-text-color)'>{time_str}</td>"
+        schedule += f"<td style='padding:10px; border:1px solid var(--border-color-primary); color:var(--body-text-color)'>Court {match.court}</td>"
+        schedule += f"<td style='padding:10px; border:1px solid var(--border-color-primary); color:var(--body-text-color)'>{match.category}</td>"
+        schedule += f"<td style='padding:10px; border:1px solid var(--border-color-primary); color:var(--body-text-color)'>Group {match.group_id}</td>"
+        schedule += f"<td style='padding:10px; border:1px solid var(--border-color-primary); color:var(--body-text-color)'>{team1_name} vs {team2_name}</td>"
+        schedule += "</tr>"
     
-    schedule += """
-</tbody>
-</table>
-</div>
-</div>
-"""
+    schedule += "</table></div></div>"
     
-    # Combine all sections
     return summary + schedule
 
 def create_tournament_schedule(
